@@ -146,7 +146,8 @@ class TLDetector(object):
         # Manual Testing
         # return light.state
 
-        # This block will be back with Classifier
+        # Traffic Light Classifier section
+        # If need to manual test, please uncomment Manual Testing block above
         if not self.has_image:
             self.prev_light_loc = None
             return False
