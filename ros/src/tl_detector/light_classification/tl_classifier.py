@@ -4,7 +4,7 @@ import numpy as np
 import datetime
 import rospy
 
-THRESHOLE = .5
+THRESHOLD = .5
 class TLClassifier(object):
     def __init__(self, is_site=False):
         self.is_site = is_site
@@ -50,7 +50,7 @@ class TLClassifier(object):
         start_clock = datetime.datetime.now()
         with self.graph.as_default():
             image_expanded = np.expand_dims(image, axis=0)
-            (boxes, scores, classes, num) = self.sess.run(
+            boxes, scores, classes, num = self.sess.run(
                 [self.detect_boxes, self.detect_scores, self.detect_classes, self.num_detections],
                 feed_dict={self.image_tensor: image_expanded})
 
@@ -70,11 +70,11 @@ class TLClassifier(object):
         #  3: {'id': 3, 'name': 'Yellow'},
         #  4: {'id': 4, 'name': 'off'}
         # }
-        if scores[0] >= THRESHOLE:
+        if scores[0] >= THRESHOLD:
             if classes[0] == 1:
                 return TrafficLight.GREEN
             elif classes[0] == 2:
                 return TrafficLight.RED
-            elif classes[1] == 3:
+            elif classes[0] == 3:
                 return TrafficLight.YELLOW
         return TrafficLight.UNKNOWN
