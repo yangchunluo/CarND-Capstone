@@ -75,20 +75,25 @@ roslaunch launch/styx-parking.launch
 And select the Test Lot track. Uncheck "Manual". You should see the car following the green waypoints. 
 ![Parking lot](./imgs/parking-lot.png)
 
-## Testing on real data
+### Testing on real data
 
-Download [training bag](https://s3-us-west-1.amazonaws.com/udacity-selfdrivingcar/traffic_light_bag_file.zip) that was recorded on the Udacity self-driving car.
+Download the [bag file](https://drive.google.com/file/d/0B2_h37bMVw3iYkdJTlRSUlJIamM/view?usp=sharing) that was recorded on the Udacity self-driving car.
 Unzip the file
 ```bash
-unzip traffic_light_bag_file.zip
+unzip traffic_light_bag_files.zip
 ```
 Launch your project in site mode
 ```bash
 cd CarND-Capstone/ros
 roslaunch launch/site.launch
 ```
-Play the bag file
+Play the bag file that contains **all the topics**
 ```bash
-rosbag play -l traffic_light_bag_file/traffic_light_training.bag
+rosbag play -l traffic_light_bag_files/loop_with_traffic_light.bag
 ```
-Confirm that traffic light detection works on real life images
+Visualize the camera image through ROS [rviz](http://wiki.ros.org/rviz) tool
+```bash
+rosrun rviz rviz
+```
+Confirm that traffic light is classified correctly according to the video stream.
+![Play bag](./imgs/play-bag.png)

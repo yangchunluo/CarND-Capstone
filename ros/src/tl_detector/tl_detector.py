@@ -1,25 +1,33 @@
 #!/usr/bin/env python
+"""
+Traffic light detector module.
+"""
+from cv_bridge import CvBridge
 import rospy
-from std_msgs.msg import Int32
+from scipy.spatial import KDTree
+import tf
+import yaml
+
 from geometry_msgs.msg import PoseStamped, Pose
+from sensor_msgs.msg import Image
+from std_msgs.msg import Int32
 from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-from light_classification.tl_classifier import TLClassifier
-import tf
-import cv2
-import yaml
-import math
-import os
-from scipy.spatial import KDTree
 
-STATE_COUNT_THRESHOLD = 3
-SPIN_FREQUENCY = 30
+from light_classification.tl_classifier import TLClassifier
+
+_STATE_COUNT_THRESHOLD = 3
+_SPIN_FREQUENCY = 30
+
 
 class TLDetector(object):
-    def __init__(self):
+    """
+    Traffic light detector node.
+    """
+    def __init__(self, enable_classification=True):
         rospy.init_node('tl_detector')
+        self.enable_classification = enable_classification
+
         self.pose = None
         self.waypoints = None
         self.camera_image = None
@@ -28,8 +36,8 @@ class TLDetector(object):
         self.waypoints_tree = None
         self.stopline_list = []
 
-        sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
-        sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+        rospy.Subscriber('/current_pose', PoseStamped, self.pose_callback)
+        rospy.Subscriber('/base_waypoints', Lane, self.waypoints_callback)
 
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
@@ -38,8 +46,8 @@ class TLDetector(object):
         simulator. When testing on the vehicle, the color state will not be available. You'll need to
         rely on the position of the light and the camera image to predict it.
         '''
-        sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
-        sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
+        rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_callback)
+        rospy.Subscriber('/image_color', Image, self.image_callback)
 
         config_string = rospy.get_param("/traffic_light_config")
         self.config = yaml.load(config_string)
@@ -64,20 +72,18 @@ class TLDetector(object):
         rate = rospy.Rate(freq)
         while not rospy.is_shutdown():
 
-            '''
-            Publish upcoming red lights at camera frequency.
-            Each predicted state has to occur `STATE_COUNT_THRESHOLD` number
-            of times till we start using it. Otherwise the previous stable state is
-            used.
-            '''
+            # Publish upcoming red lights at camera frequency.
+            # Each predicted state has to occur `_STATE_COUNT_THRESHOLD` number
+            # of times till we start using it. Otherwise the previous stable state is used.
             if None not in (self.pose, self.waypoints, self.camera_image):
                 light_wp, state = self.process_traffic_lights()
-                # once process traffic light set camera_image to None so if no image coming we will skip this block
+                # Once traffic light is processed, set camera_image to None.
                 self.camera_image = None
+
                 if self.state != state:
                     self.state_count = 0
                     self.state = state
-                elif self.state_count >= STATE_COUNT_THRESHOLD:
+                elif self.state_count >= _STATE_COUNT_THRESHOLD:
                     self.last_state = self.state
                     light_wp = light_wp if state == TrafficLight.RED else -1
                     self.last_wp = light_wp
@@ -87,10 +93,10 @@ class TLDetector(object):
                 self.state_count += 1
             rate.sleep()
 
-    def pose_cb(self, msg):
+    def pose_callback(self, msg):
         self.pose = msg
 
-    def waypoints_cb(self, waypoints):
+    def waypoints_callback(self, waypoints):
         self.waypoints = waypoints
 
         # Get the waypoints in X, Y plane and set up the KDTree for efficient comparison.
@@ -104,81 +110,53 @@ class TLDetector(object):
             closest_idx = self.waypoints_tree.query([stop_line_position[0], stop_line_position[1]], 1)[1]
             self.stopline_list.append(closest_idx)
 
-    def traffic_cb(self, msg):
+    def traffic_callback(self, msg):
         self.lights = msg.lights
 
-    def image_cb(self, msg):
-        """Identifies red lights in the incoming camera image and publishes the index
-            of the waypoint closest to the red light's stop line to /traffic_waypoint
-
-        Args:
-            msg (Image): image from car-mounted camera
-
-        """
-        self.has_image = True
+    def image_callback(self, msg):
         self.camera_image = msg
 
     def get_closest_waypoint(self, pose):
-        """Identifies the closest path waypoint to the given position
-            https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
+        """
+        Gets the closest path waypoint to the given position.
+        https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
+
         Args:
-            pose (Pose): position to match a waypoint to
-
+            pose (Pose): position to match a waypoint to.
         Returns:
-            int: index of the closest waypoint in self.waypoints
-
+            int: index of the closest waypoint in self.waypoints.
         """
         x = pose.position.x
         y = pose.position.y
         closest_idx = self.waypoints_tree.query([x, y], 1)[1]
         return closest_idx
 
-    def get_light_state(self, light):
-        """Determines the current color of the traffic light
-
-        Args:
-            light (TrafficLight): light to classify
-
-        Returns:
-            int: ID of traffic light color (specified in styx_msgs/TrafficLight)
-
-        """
-        # Manual Testing
-        # return light.state
-
-        # Traffic Light Classifier section
-        # If need to manual test, please uncomment Manual Testing block above
-        if not self.has_image:
-            self.prev_light_loc = None
-            return False
-
-        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-
-        #Get classification
-        return self.light_classifier.get_classification(cv_image)
-
     def process_traffic_lights(self):
-        """Finds closest visible traffic light, if one exists, and determines its
-            location and color
+        """
+        Finds closest visible traffic light, if one exists, and determines its location and color.
 
         Returns:
             int: index of waypoint closes to the upcoming stop line for a traffic light (-1 if none exists)
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
-
         """
-        if(self.pose):
-            car_position = self.get_closest_waypoint(self.pose.pose)
-            for i in range(len(self.stopline_list)):
-                if self.stopline_list[i] >= car_position:
-                    state = self.get_light_state(self.lights[i])
-                    return self.stopline_list[i], state
+        assert self.pose
+        car_wp = self.get_closest_waypoint(self.pose.pose)
+        for ix, stop_wp in enumerate(self.stopline_list):
+            if stop_wp < car_wp:
+                continue
+            if self.enable_classification:
+                assert self.camera_image
+                cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+                state = self.light_classifier.get_classification(cv_image)
+            else:
+                state = self.lights[ix]
+            return stop_wp, state
 
-        #bugbug this line will cause error between last light and end of lap
-        #self.waypoints = None
         return -1, TrafficLight.UNKNOWN
+
 
 if __name__ == '__main__':
     try:
-        TLDetector().spin(SPIN_FREQUENCY)
+        TLDetector().spin(_SPIN_FREQUENCY)
     except rospy.ROSInterruptException:
         rospy.logerr('Could not start traffic node.')
